@@ -28,6 +28,8 @@ spaces = zeroOrMore (satisfy isSpace)
 ident :: Parser String
 ident =(:)<$> (satisfy isAlpha) <*> (zeroOrMore (satisfy isAlphaNum))
 
+string :: Parser String
+string =  zeroOrMore (satisfy isAlphaNum) 
 ------------------------------------------------------------
 --  3. Parsing S-expressions
 ------------------------------------------------------------
@@ -38,7 +40,7 @@ ident =(:)<$> (satisfy isAlpha) <*> (zeroOrMore (satisfy isAlphaNum))
 type Ident = String
 
 -- An "atom" is either an integer value or an identifier.
-data Atom = N Integer | I Ident
+data Atom = N Integer | I Ident | S String
   deriving Show
 
 -- An S-expression is either an atom, or a list of S-expressions.
@@ -47,7 +49,8 @@ data SExpr = A Atom
   deriving Show
 
 parseAtom :: Parser Atom
-parseAtom = (N <$> posInt) <|> (I <$> ident)
+parseAtom = (N <$> posInt) <|> (I <$> ident) <|> 
+  (S <$> (char '"' *> string <* char '"'))
 
 parseSExpr :: Parser SExpr
 parseSExpr = spaces *> ((A <$> parseAtom) <|> 
