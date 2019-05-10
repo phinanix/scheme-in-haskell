@@ -30,6 +30,26 @@ ident =(:)<$> (satisfy isAlpha) <*> (zeroOrMore (satisfy isAlphaNum))
 
 string :: Parser String
 string =  zeroOrMore (satisfy isAlphaNum) 
+
+integer :: Parser Integer
+integer = (posInt) <|> (((-1) *) <$>  (char '-' *> posInt))
+
+specificString :: String -> Parser String
+specificString [x] = (:) <$> char x <*> (pure [])
+specificString (x:xs) = (:) <$> char x <*> (specificString xs)
+
+builtin :: Parser Builtin
+builtin = (char '+' *> (pure Plus)) <|>
+          (char '-' *> (pure Minus)) <|>
+          (char '*' *> (pure Times)) <|>
+          (char '/' *> (pure Divide)) <|>
+          (specificString "if") *> (pure If) <|>
+          (specificString "and") *> (pure And) <|>
+          (specificString "or") *> (pure Or) <|>
+          (specificString "cons") *> (pure Cons) <|>
+          (specificString "car") *> (pure Car) <|>
+          (specificString "cdr") *> (pure Cdr) <|>
+          (specificString "quote") *> (pure Quote) 
 ------------------------------------------------------------
 --  3. Parsing S-expressions
 ------------------------------------------------------------
@@ -39,8 +59,15 @@ string =  zeroOrMore (satisfy isAlphaNum)
 -- letters and digits are valid identifiers.
 type Ident = String
 
--- An "atom" is either an integer value or an identifier.
-data Atom = N Integer | I Ident | S String
+data Builtin = Plus | Minus | Times | Divide 
+             | If | Cons | Car | Cdr | Quote
+             | And | Or
+
+  deriving (Show, Eq)
+
+-- An "atom" is an integer value, an identifier, a string, or a builtin function
+data Atom = N Integer | I Ident | S String | BI Builtin 
+          | BO Bool | Null
   deriving Show
 
 -- An S-expression is either an atom, or a list of S-expressions.
@@ -49,10 +76,14 @@ data SExpr = A Atom
   deriving Show
 
 parseAtom :: Parser Atom
-parseAtom = (N <$> posInt) <|> (I <$> ident) <|> 
-  (S <$> (char '"' *> string <* char '"'))
+parseAtom = (N <$> integer) <|> 
+  (BI <$> builtin) <|> (S <$> (char '"' *> string <* char '"')) <|>
+  (char '#' *> char 't' *> pure (BO True)) <|>
+  (char '#' *> char 'f' *> pure (BO False)) <|>
+  (char '\'' *> char '(' *> char ')' *> pure Null) <|> (I <$> ident)
+
 
 parseSExpr :: Parser SExpr
 parseSExpr = spaces *> ((A <$> parseAtom) <|> 
   (Comb <$> (char '(' *> (oneOrMore parseSExpr) 
-  <* spaces <* char ')')))
+  <* spaces <* char ')'))) <* spaces
