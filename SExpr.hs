@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {- CIS 194 HW 11
    due Monday, 8 April
 -}
@@ -22,11 +23,25 @@ oneOrMore p = (:) <$> p <*> (zeroOrMore p)
 --  2. Utilities
 ------------------------------------------------------------
 
+anyOf :: String -> Parser Char
+anyOf "" = empty
+anyOf (x:xs) = char x <|> anyOf xs
+
+validSymbol :: Char -> Bool
+validSymbol c = elem c "+-*/!@$%^&_=|~"
+
+validStart :: Char -> Bool
+validStart c = or [isAlpha c, validSymbol c]
+
+validRest :: Char -> Bool
+validRest c = or [isAlphaNum c, validSymbol c]
+
 spaces :: Parser String
 spaces = zeroOrMore (satisfy isSpace)
 
 ident :: Parser String
-ident =(:)<$> (satisfy isAlpha) <*> (zeroOrMore (satisfy isAlphaNum))
+ident =(:)<$> (satisfy validStart)
+  <*> (zeroOrMore (satisfy validRest))
 
 string :: Parser String
 string =  zeroOrMore (satisfy isAlphaNum) 
@@ -38,18 +53,6 @@ specificString :: String -> Parser String
 specificString [x] = (:) <$> char x <*> (pure [])
 specificString (x:xs) = (:) <$> char x <*> (specificString xs)
 
-builtin :: Parser Builtin
-builtin = (char '+' *> (pure Plus)) <|>
-          (char '-' *> (pure Minus)) <|>
-          (char '*' *> (pure Times)) <|>
-          (char '/' *> (pure Divide)) <|>
-          (specificString "if") *> (pure If) <|>
-          (specificString "and") *> (pure And) <|>
-          (specificString "or") *> (pure Or) <|>
-          (specificString "cons") *> (pure Cons) <|>
-          (specificString "car") *> (pure Car) <|>
-          (specificString "cdr") *> (pure Cdr) <|>
-          (specificString "quote") *> (pure Quote) 
 ------------------------------------------------------------
 --  3. Parsing S-expressions
 ------------------------------------------------------------
@@ -65,25 +68,31 @@ data Builtin = Plus | Minus | Times | Divide
 
   deriving (Show, Eq)
 
--- An "atom" is an integer value, an identifier, a string, or a builtin function
-data Atom = N Integer | I Ident | S String | BI Builtin 
-          | BO Bool | Null
-  deriving Show
+type SchemeFunc = ([SExpr]->Either String SExpr)
+instance Show SchemeFunc where
+  show s = "function"
+type MacroFunc  = ([SExpr]->Either String [SExpr])
+instance Show MacroFunc where
+  show s = "macro"
 
 -- An S-expression is either an atom, or a list of S-expressions.
-data SExpr = A Atom
+data SExpr = N Integer | I Ident | S String -- | BI Builtin 
+           | BO Bool | EmptyList | F SchemeFunc 
+           | Macro MacroFunc
+           | Special SchemeFunc
            | Comb [SExpr]
   deriving Show
 
-parseAtom :: Parser Atom
+parseAtom :: Parser SExpr
 parseAtom = (N <$> integer) <|> 
-  (BI <$> builtin) <|> (S <$> (char '"' *> string <* char '"')) <|>
+  (S <$> (char '"' *> string <* char '"')) <|>
   (char '#' *> char 't' *> pure (BO True)) <|>
   (char '#' *> char 'f' *> pure (BO False)) <|>
-  (char '\'' *> char '(' *> char ')' *> pure Null) <|> (I <$> ident)
+  (char '\'' *> char '(' *> char ')' *> pure EmptyList) <|> 
+  (I <$> ident)
 
 
 parseSExpr :: Parser SExpr
-parseSExpr = spaces *> ((A <$> parseAtom) <|> 
+parseSExpr = spaces *> (parseAtom <|> 
   (Comb <$> (char '(' *> (oneOrMore parseSExpr) 
   <* spaces <* char ')'))) <* spaces
