@@ -44,7 +44,7 @@ ident =(:)<$> (satisfy validStart)
   <*> (zeroOrMore (satisfy validRest))
 
 string :: Parser String
-string =  zeroOrMore (satisfy isAlphaNum) 
+string =  zeroOrMore (satisfy validRest) 
 
 integer :: Parser Integer
 integer = (posInt) <|> (((-1) *) <$>  (char '-' *> posInt))
@@ -61,13 +61,6 @@ specificString (x:xs) = (:) <$> char x <*> (specificString xs)
 -- those Strings consisting of a letter followed by any number of
 -- letters and digits are valid identifiers.
 type Ident = String
-
-data Builtin = Plus | Minus | Times | Divide 
-             | If | Cons | Car | Cdr | Quote
-             | And | Or
-
-  deriving (Show, Eq)
-
 type SchemeFunc = ([SExpr]->Either String SExpr)
 instance Show SchemeFunc where
   show s = "function"
@@ -76,7 +69,7 @@ instance Show MacroFunc where
   show s = "macro"
 
 -- An S-expression is either an atom, or a list of S-expressions.
-data SExpr = N Integer | I Ident | S String -- | BI Builtin 
+data SExpr = N Integer | I Ident | S String 
            | BO Bool | EmptyList | F SchemeFunc 
            | Macro MacroFunc
            | Special SchemeFunc

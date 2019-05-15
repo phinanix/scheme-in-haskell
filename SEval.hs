@@ -39,12 +39,6 @@ biDivide ((Nval n):rest) = foldr aggregate
     aggreate notnum _ = Left $ (show notnum) ++ "is not a number"
 biDivide notnums = Left $ (show notnums) ++ "do not begin with a number"-}
 
-evalFirst :: [SExpr] -> Either String (SExpr, [SExpr])
-evalFirst [] = Left "tried to eval an empty list"
-evalFirst (x:xs) = extract (eval x, xs) where
-    extract (Left e, _) = Left e
-    extract (Right a, b) = Right (a,b)
-
 biIf :: [SExpr] -> Either String SExpr
 biIf l@[x,y,z] = evalFirst l >>= listIf
     where listIf ((BO True),_)  = eval y
@@ -80,6 +74,7 @@ biOr (x:xs) = (eval x) >>= continue
 biQuote :: [SExpr] -> Either String SExpr
 biQuote [] = Left "Quote called on too few arguments"
 biQuote l = Right $ Comb l
+
 {-to write quote, it seems like we need some sort of intermediate 
 representation, it's not a SchemeVal because it's not fully evaluated, but it's not an SExpr either . . . is it?
 like scheme is weakly typed, the type of quote is, idk
@@ -87,17 +82,17 @@ like scheme is weakly typed, the type of quote is, idk
 {- like is what's supposed to happen we parse the input into a series of nested lists and then we repeatedly call evaluate on all of those lists until we get something?
 where `parseSExpr` makes the nested lists and then eval takes care of evaluating them?
 -}
-builtInsList :: [(Builtin, SExpr)]
-builtInsList = [(Plus, F biPlus), 
-                (Minus, F biMinus), 
-                (Times, F biTimes),
-                (If, Special biIf),
-                (Cons, Special biCons),
-                (Car, Special biCar),
-                (Cdr, Special biCdr),
-                (And, Special biAnd),
-                (Or, Special biOr),
-                (Quote, Special biQuote)]
+builtInsList :: [(Ident, SExpr)]
+builtInsList = [("+", F biPlus), 
+                ("-", F biMinus), 
+                ("*", F biTimes),
+                ("if", Special biIf),
+                ("cons", Special biCons),
+                ("car", Special biCar),
+                ("cdr", Special biCdr),
+                ("and", Special biAnd),
+                ("or", Special biOr),
+                ("quote", Special biQuote)]
 
 {- eval needs to know the difference between a function, which
 takes a list of evaluated arguments and evaluates them, and a 
@@ -108,17 +103,17 @@ eval val@(N n) = Right val
 eval val@(S str) = Right val
 eval val@(BO bool) = Right val
 eval EmptyList = Right EmptyList
-eval (BI b) = wrap $ lookup b builtInsList where
-    wrap Nothing = Left "builtin not found"
+eval (I token) = wrap $ lookup token builtInsList where
+    wrap Nothing = Left $ (show token) ++ "not found"
     wrap (Just func) = Right func
-eval (Comb list) =  (evalFirst list) >>= combEval
+eval (Comb (x:xs)) =  ((:) <$> eval x <*> pure xs) >>= combEval
 eval somethingelse = Left $ "got " ++ (show somethingelse)
---how to eval a macro goes here
-combEval :: (SExpr, [SExpr]) -> Either String SExpr
-combEval ((F func), rest) = (mapM eval rest) >>= func
-combEval ((Macro m), rest) = (m rest) >>= (eval . Comb)
-combEval ((Special s), rest) = s rest
-combEval (x,rest) = Left $ "Tried to call " ++ (show x) ++ 
+
+combEval :: [SExpr] -> Either String SExpr
+combEval ((F func):rest) = (mapM eval rest) >>= func
+combEval ((Macro m):rest) = (m rest) >>= (eval . Comb)
+combEval ((Special s):rest) = s rest
+combEval (x:rest) = Left $ "Tried to call " ++ (show x) ++ 
     " (not a function) on " ++ (show rest)
 
 evaluateScheme :: String -> Either String SExpr
