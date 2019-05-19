@@ -61,18 +61,25 @@ specificString (x:xs) = (:) <$> char x <*> (specificString xs)
 -- those Strings consisting of a letter followed by any number of
 -- letters and digits are valid identifiers.
 type Ident = String
+newtype Context = C { unwrap :: [(Ident, SExpr)]} deriving Show
 type SchemeFunc = ([SExpr]->Either String SExpr)
 instance Show SchemeFunc where
   show s = "function"
 type MacroFunc  = ([SExpr]->Either String [SExpr])
 instance Show MacroFunc where
   show s = "macro"
+type SpecialFunc = (Context->[SExpr]->Either String SExpr)
+instance Show SpecialFunc where
+  show s = "special"
 
+type Formals = [Ident]
+type Body = SExpr
 -- An S-expression is either an atom, or a list of S-expressions.
 data SExpr = N Integer | I Ident | S String 
            | BO Bool | EmptyList | F SchemeFunc 
            | Macro MacroFunc
-           | Special SchemeFunc
+           | Special SpecialFunc
+           | Closure Context Formals Body
            | Comb [SExpr]
   deriving Show
 
