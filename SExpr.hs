@@ -8,6 +8,7 @@ module SExpr where
 import AParser
 import Control.Applicative
 import Data.Char
+import Data.Semigroup
 
 ------------------------------------------------------------
 --  1. Parsing repetitions
@@ -62,6 +63,13 @@ specificString (x:xs) = (:) <$> char x <*> (specificString xs)
 -- letters and digits are valid identifiers.
 type Ident = String
 newtype Context = C { unwrap :: [(Ident, SExpr)]} deriving Show
+instance Semigroup Context where
+  --inner idents shadow outer idents
+  (C outer) <> (C inner) = C (inner ++ outer)
+instance Monoid Context where
+  mempty = C []
+  mappend = (<>)
+
 type SchemeFunc = ([SExpr]->Either String SExpr)
 instance Show SchemeFunc where
   show s = "function"

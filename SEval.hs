@@ -3,6 +3,7 @@
 module SEval where
 
 import Control.Monad
+import Data.Semigroup
 
 import AParser
 import SExpr
@@ -78,21 +79,37 @@ biQuote _ [] = Left "Quote called on too few arguments"
 biQuote _ l = Right $ Comb l
 
 biLambda :: Context -> [SExpr] -> Either String SExpr
-biLambda _ [] = Left "lambda may not be called on nothing"
-biLambda _ [x] = Left $ "lambda may not be called with formals " 
-    ++ show x ++ " without a body"
 biLambda c [(Comb formals),body]
     | all isId formals = do formalIds <- mapM toIdent formals 
                             return $ Closure c formalIds body
-    | otherwise     = Left $ show formals 
+    | otherwise        = Left $ show formals 
                         ++ "is not a valid list of formals"
     where isId (I _) = True
           isId _     = False
           toIdent (I ident) = Right ident
           toIdent notid     = Left $ (show notid) ++ 
                                 "is not an identifier"
+biLambda _ [] = Left "lambda may not be called on nothing"
+biLambda _ [x] = Left $ "lambda may not be called with formals " 
+    ++ show x ++ " without a body"
 biLambda _ toomany = Left $ "body of lambda:" ++ (show toomany) ++
                             "may only have one expression"
+--because scheme is annoying, exps can be a list of expressions to
+--evaluate one by one
+biLet :: Context -> [SExpr] -> Either String SExpr
+biLet c ((Comb defs):exps) = do
+    evDefs <- mapM extract defs
+    innerc <- uncurry (bindArgs c) (unzip evDefs)
+    _      <- traverse (eval c) (init exps)
+    eval c $ last exps
+    where 
+        extract (Comb [(I ident), expr ]) = Right (ident, expr)
+        extract notdef = Left $ show notdef ++ 
+                            "is not a definition"
+biLet _ []  = Left "let may not be called on nothing" 
+biLet _ [x] = Left $ "let called on too few arguments:" ++ show x
+biLet _ toomany = Left $ "let called on too many arguments:" 
+                            ++ show toomany
 {- There are three contexts. 
 The outer context is only used to evaluate the arguments.
 The inner context is used to evaluate the body.
@@ -106,8 +123,8 @@ bindArgs c fs args | length fs == length args =
     | otherwise = Left $ "gave the wrong number of args " 
         ++ show args ++ " for the formals: " ++ show fs
 
-appendC :: Context -> Context -> Context
-appendC (C c1) (C c2) = C $ c1 ++ c2
+{-appendC :: Context -> Context -> Context
+appendC (C c1) (C c2) = C $ c1 ++ c2-}
 
 {-to write quote, it seems like we need some sort of intermediate 
 representation, it's not a SchemeVal because it's not fully evaluated, but it's not an SExpr either . . . is it?
@@ -129,7 +146,8 @@ builtInsList = C [("+", F biPlus),
                 ("and", Special biAnd),
                 ("or", Special biOr),
                 ("quote", Special biQuote),
-                ("lambda", Special biLambda)]
+                ("lambda", Special biLambda),
+                ("let", Special biLet)]
 
 {- eval needs to know the difference between a function, which
 takes a list of evaluated arguments and evaluates them, and a 
@@ -154,7 +172,7 @@ combEval c ((Macro m):rest)
 combEval ctext ((Special s):rest) = s ctext rest
 combEval c ((Closure innerc formals body):args) =  
     do boundargs <- bindArgs c formals args
-       eval (appendC boundargs innerc) body
+       eval (boundargs <> innerc) body
 combEval _ (x:rest) = Left $ "Tried to call " ++ (show x) ++ 
     " (not a function) on " ++ (show rest)
 
