@@ -76,7 +76,7 @@ instance Show SchemeFunc where
 type MacroFunc  = ([SExpr]->Either String [SExpr])
 instance Show MacroFunc where
   show s = "macro"
-type SpecialFunc = (Context->[SExpr]->Either String SExpr)
+type SpecialFunc = (Context,[SExpr])->Either String (Context,SExpr)
 instance Show SpecialFunc where
   show s = "special"
 

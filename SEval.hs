@@ -4,6 +4,9 @@ module SEval where
 
 import Control.Monad
 import Data.Semigroup
+import Data.Bifunctor
+import Data.Either.Combinators
+
 
 import AParser
 import SExpr
@@ -40,48 +43,65 @@ biDivide ((Nval n):rest) = foldr aggregate
     aggreate notnum _ = Left $ (show notnum) ++ "is not a number"
 biDivide notnums = Left $ (show notnums) ++ "do not begin with a number"-}
 
-biIf :: Context->[SExpr] -> Either String SExpr
-biIf c [x,y,z] = eval c x >>= listIf
-    where listIf (BO True)  = eval c y
-          listIf (BO False) = eval c z
-          listIf x = Left $ (show x) ++ " is not a boolean"
-biIf c wronglen = Left $ (show wronglen) ++ " is the wrong length for an if statement"
+--note that many of these built-ins do not support define inside 
+--them, ie (if (define x #t) 5 6) returns 5 but does not define x
 
-biCons :: Context -> [SExpr] -> Either String SExpr
-biCons c [x, y] = do xval <- eval c x 
-                     yval <- eval c y
-                     return $ Comb [xval,yval]
-biCons c nottwo = Left $ "cons was applied to the wrong number of arguments:" ++ (show nottwo)
-biCar :: Context -> [SExpr] -> Either String SExpr
-biCar c [x] = eval c x >>= unwrap where 
-    unwrap (Comb (s1:_)) = Right s1
-    unwrap notpair = Left $ (show notpair) ++ " is not a list"
-biCar c toomany = Left $ "car was applied to too many arguments" ++ (show toomany)
-biCdr :: Context -> [SExpr] -> Either String SExpr
-biCdr c [x] = eval c x >>= unwrap where 
-    unwrap (Comb (s1:s2)) = Right $ Comb s2
-    unwrap notpair = Left $ (show notpair) ++ " is not a list"
-biCdr c toomany = Left $ "cdr was applied to too many arguments" ++ (show toomany)
-biAnd :: Context -> [SExpr] -> Either String SExpr
-biAnd c [] = Right $ BO True
-biAnd c [x] = eval c x
-biAnd c (x:xs) = (eval c x) >>= continue 
-    where continue f@(BO False) = Right f
-          continue truthy = biAnd c xs
-biOr :: Context -> [SExpr] -> Either String SExpr
-biOr c [] = Right $ BO False
-biOr c (x:xs) = (eval c x) >>= continue 
-    where continue f@(BO False) = biOr c xs
-          continue truthy = Right truthy
+biIf :: (Context,[SExpr]) -> Either String (Context,SExpr)
+biIf (c, [x,y,z]) = do  (cx, val) <- eval (c,x)
+                        (case val of 
+                            (BO True)  -> eval (cx,y)
+                            (BO False) -> eval (cx,z)
+                            x          -> Left $ (show x) 
+                                        ++ " is not a boolean")
+biIf (c, wronglen) = Left $ (show wronglen) ++ 
+                        " is the wrong length for an if statement"
 
-biQuote :: Context -> [SExpr] -> Either String SExpr
-biQuote _ [] = Left "Quote called on too few arguments"
-biQuote _ l = Right $ Comb l
+biCons :: (Context, [SExpr]) -> Either String (Context,SExpr)
+biCons (c,[x, y]) = do  (cx,xval) <- eval (c,x) 
+                        (cy,yval) <- eval (c,y)
+                        return $ (cy, Comb [xval,yval])
+biCons (c,nottwo) = Left $ 
+            "cons was applied to the wrong number of arguments:"
+            ++ (show nottwo)
+            
+biCar :: (Context,[SExpr]) -> Either String (Context,SExpr)
+biCar (c, [x]) = do (cx,val) <- eval (c,x) 
+                    case val of
+                        (Comb (s1:_)) -> return (cx,s1)
+                        notpair -> Left $ (show notpair) ++ 
+                                    " is not a list"
+biCar (c, toomany) = Left $ "car was applied to too many arguments" 
+                        ++ (show toomany)
+biCdr :: (Context,[SExpr]) -> Either String (Context,SExpr)
+biCdr (c, [x]) = do (cx,val) <- eval (c,x)
+                    case val of
+                     (Comb (s1:s2)) -> Right $ (cx,Comb s2)
+                     notpair -> Left $ (show notpair) 
+                                ++ " is not a list"
+biCdr (c, toomany) = Left $ "cdr was applied to too many arguments" 
+                        ++ (show toomany)
+biAnd :: (Context, [SExpr]) -> Either String (Context,SExpr)
+biAnd (c, [])     = Right $ (c, BO True)
+biAnd (c, [x])    = eval (c,x)
+biAnd (c, (x:xs)) = do  (cx,val) <- eval (c,x)
+                        case val of 
+                            f@(BO False) -> Right (cx,f)
+                            truthy       -> biAnd (cx,xs)
+biOr :: (Context, [SExpr]) -> Either String (Context,SExpr)
+biOr (c, []) = Right $ (c,BO False)
+biOr (c, (x:xs)) = do  (cx,val) <- eval (c,x)
+                       case val of
+                        f@(BO False) -> biOr (cx, xs)
+                        truthy       -> Right (cx,truthy)
 
-biLambda :: Context -> [SExpr] -> Either String SExpr
-biLambda c [(Comb formals),body]
+biQuote :: (Context,[SExpr]) -> Either String (Context,SExpr)
+biQuote (c,[]) = Left "Quote called on too few arguments"
+biQuote (c, l) = Right $ (c, Comb l)
+
+biLambda :: (Context,[SExpr]) -> Either String (Context,SExpr)
+biLambda (c, [(Comb formals),body])
     | all isId formals = do formalIds <- mapM toIdent formals 
-                            return $ Closure c formalIds body
+                            return $ (c, Closure c formalIds body)
     | otherwise        = Left $ show formals 
                         ++ "is not a valid list of formals"
     where isId (I _) = True
@@ -89,26 +109,26 @@ biLambda c [(Comb formals),body]
           toIdent (I ident) = Right ident
           toIdent notid     = Left $ (show notid) ++ 
                                 "is not an identifier"
-biLambda _ [] = Left "lambda may not be called on nothing"
-biLambda _ [x] = Left $ "lambda may not be called with formals " 
+biLambda (_, []) = Left "lambda may not be called on nothing"
+biLambda (_, [x]) = Left $ "lambda may not be called with formals " 
     ++ show x ++ " without a body"
-biLambda _ toomany = Left $ "body of lambda:" ++ (show toomany) ++
+biLambda (_, toomany) = Left $ "body of lambda:" ++ (show toomany) ++
                             "may only have one expression"
 --because scheme is annoying, exps can be a list of expressions to
 --evaluate one by one
-biLet :: Context -> [SExpr] -> Either String SExpr
-biLet c ((Comb defs):exps) = do
+biLet :: (Context, [SExpr]) -> Either String (Context,SExpr)
+biLet (c, ((Comb defs):exps)) = do
     evDefs <- mapM extract defs
     innerc <- uncurry (bindArgs c) (unzip evDefs)
-    _      <- traverse (eval c) (init exps)
-    eval c $ last exps
+    (_, vals) <- evalSeq (c <> innerc,exps)
+    return (c, last exps)
     where 
         extract (Comb [(I ident), expr ]) = Right (ident, expr)
         extract notdef = Left $ show notdef ++ 
                             "is not a definition"
-biLet _ []  = Left "let may not be called on nothing" 
-biLet _ [x] = Left $ "let called on too few arguments:" ++ show x
-biLet _ toomany = Left $ "let called on too many arguments:" 
+biLet (_, [])  = Left "let may not be called on nothing" 
+biLet (_, [x]) = Left $ "let called on too few arguments:" ++ show x
+biLet (_, toomany) = Left $ "let called on too many arguments:" 
                             ++ show toomany
 {- There are three contexts. 
 The outer context is only used to evaluate the arguments.
@@ -118,7 +138,7 @@ The formals extend the inner context. -}
 --the list of arguments 
 bindArgs :: Context -> Formals -> [SExpr] -> Either String Context
 bindArgs c fs args | length fs == length args = 
-    do eval'dArgs <- mapM (eval c) args
+    do eval'dArgs <- mapM (fmap snd . eval) (zip (repeat c) args)
        return $ C $ zip fs eval'dArgs
     | otherwise = Left $ "gave the wrong number of args " 
         ++ show args ++ " for the formals: " ++ show fs
@@ -153,32 +173,48 @@ builtInsList = C [("+", F biPlus),
 takes a list of evaluated arguments and evaluates them, and a 
 "special form", which does something to the code-tree and then 
 returns the rest of the code tree-}     
-eval :: Context -> SExpr -> Either String SExpr
-eval _ val@(N n) = Right val
-eval _ val@(S str) = Right val
-eval _ val@(BO bool) = Right val
-eval _ EmptyList = Right EmptyList
-eval (C context) (I token) = wrap $ lookup token context where
+eval :: (Context,SExpr) -> Either String (Context,SExpr)
+eval (c, val@(N n))     = Right (c, val)
+eval (c, val@(S str))   = Right (c, val)
+eval (c, val@(BO bool)) = Right (c, val)
+eval (c, EmptyList)     = Right (c, EmptyList)
+eval (c@(C context),(I token)) = wrap $ lookup token context where
     wrap Nothing = Left $ (show token) ++ "not found"
-    wrap (Just func) = Right func
-eval c (Comb (x:xs)) =  ((:) <$> eval c x <*> pure xs) 
-                                   >>= (combEval c)
-eval  _ somethingelse = Left $ "got " ++ (show somethingelse)
+    wrap (Just func) = Right (c, func)
+eval (c,(Comb (x:xs))) = do (c2, evHead) <- eval (c,x)
+                            combEval $ (c2, evHead:xs)
+eval  (_, somethingelse) = Left $ "got " ++ (show somethingelse)
 
-combEval :: Context -> [SExpr] -> Either String SExpr
-combEval c ((F func):rest) = (mapM (eval c) rest) >>= func
-combEval c ((Macro m):rest)
-        = (m rest) >>= (eval c . Comb)
-combEval ctext ((Special s):rest) = s ctext rest
-combEval c ((Closure innerc formals body):args) =  
+{- sequentially evalutates the list of expressions, starting
+in the given context and passing the context along as it goes -}
+evalSeq :: (Context, [SExpr]) -> Either String (Context,[SExpr])
+evalSeq (c,[x])  = do (newc, newx) <- eval (c,x) 
+                      return (newc,[newx])
+evalSeq (c,(x:xs)) = do (newc, xval) <- eval (c,x) 
+                        fmap (second $ (:) xval) $ evalSeq (newc,xs)
+                      
+shareC :: (Context, [SExpr]) -> [(Context, SExpr)]
+shareC (c, exps) = zip (repeat c) exps
+
+combEval :: (Context,[SExpr]) -> Either String (Context,SExpr)
+--(c,rest) :: (Context, [SExpr])
+--eval  :: (Context, SExpr) -> Either String (Context, SExpr)
+--func  :: ([SExpr]->Either String SExpr)
+combEval (c,((F func):rest)) = do (newc, args) <- evalSeq (c,rest)
+                                  exp <- func args
+                                  return (newc, exp)
+combEval (c, ((Macro m):rest)) = do newtree <- m rest
+                                    eval (c,Comb newtree)
+combEval (c, ((Special s):rest)) = s (c, rest)
+combEval (c,((Closure innerc formals body):args)) =  
     do boundargs <- bindArgs c formals args
-       eval (boundargs <> innerc) body
-combEval _ (x:rest) = Left $ "Tried to call " ++ (show x) ++ 
+       eval ((boundargs <> innerc), body)
+combEval (_, (x:rest)) = Left $ "Tried to call " ++ (show x) ++ 
     " (not a function) on " ++ (show rest)
 
-evaluateScheme :: String -> Either String SExpr
-evaluateScheme = ((=<<) (eval builtInsList)) . unpack . (runParser parseSExpr) 
-    where unpack Nothing = Left "Parsing failed"
-          unpack (Just (sexpr, "")) = Right sexpr
-          unpack (Just (_, leftover)) = Left $ "parsed but had " ++ 
+evaluateScheme :: String -> Either String (Context, SExpr)
+evaluateScheme s = case (runParser parseSExpr s) of
+        Nothing -> Left "Parsing failed"
+        (Just (sexpr, "")) -> eval (builtInsList, sexpr)
+        (Just (_, leftover)) -> Left $ "parsed but had " ++ 
             leftover ++ "remaining at end"
