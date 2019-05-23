@@ -181,24 +181,25 @@ takes a list of evaluated arguments and evaluates them, and a
 "special form", which does something to the code-tree and then 
 returns the rest of the code tree-}     
 eval :: (Context,SExpr) -> Either String (Context,SExpr)
+eval (c@(C context),(I token)) = case lookup token context of
+    (Just func) -> eval (c, func)
+    Nothing     -> Left $ (show token) ++ "not found"
+eval (c,(Comb (x:xs))) = do (c2, evHead) <- eval (c,x)
+                            combEval $ (c2, evHead:xs)
+eval  (c, selfeval) = Right (c,selfeval)
+{- I think all of this self-evaluates 
 eval (c, val@(N n))     = Right (c, val)
 eval (c, val@(S str))   = Right (c, val)
 eval (c, val@(BO bool)) = Right (c, val)
 eval (c, EmptyList)     = Right (c, EmptyList)
-eval (c@(C context),(I token)) = wrap $ lookup token context where
-    wrap Nothing = Left $ (show token) ++ "not found"
-    wrap (Just func) = Right (c, func)
-eval (c,(Comb (x:xs))) = do (c2, evHead) <- eval (c,x)
-                            combEval $ (c2, evHead:xs)
-eval  (_, somethingelse) = Left $ "got " ++ (show somethingelse)
-
+-}
 {- sequentially evalutates the list of expressions, starting
 in the given context and passing the context along as it goes -}
 evalSeq :: (Context, [SExpr]) -> Either String (Context,[SExpr])
 evalSeq (c,[x])  = do (newc, newx) <- eval (c,x) 
                       return (newc,[newx])
 evalSeq (c,(x:xs)) = do (newc, xval) <- eval (c,x) 
-                        fmap (second $ (:) xval) $ evalSeq (newc,xs)
+                        (second $ (:) xval) <$> evalSeq (newc,xs)
                       
 {-shareC :: (Context, [SExpr]) -> [(Context, SExpr)]
 shareC (c, exps) = zip (repeat c) exps-}
@@ -226,3 +227,14 @@ evaluateScheme s = case (runParser parseSExpr s) of
         (Just (_, leftover)) -> Left $ "parsed but had " ++ 
             leftover ++ "remaining at end"
 
+parseProgram :: String -> Either String [SExpr]
+parseProgram p = case mapM (runParser parseSExpr) $ lines p of 
+    Nothing       -> Left "parsing failed"
+    Just pairlist -> if all (null . snd) pairlist
+        then Right $ fmap fst pairlist 
+        else Left "parsing failed"
+    
+
+evalProgram :: String -> Either String [SExpr]
+evalProgram p = parseProgram p >>= curry evalSeq builtInsList
+            >>= return . snd
