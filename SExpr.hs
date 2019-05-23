@@ -71,14 +71,8 @@ instance Monoid Context where
   mappend = (<>)
 
 type SchemeFunc = ([SExpr]->Either String SExpr)
-instance Show SchemeFunc where
-  show s = "function"
 type MacroFunc  = ([SExpr]->Either String [SExpr])
-instance Show MacroFunc where
-  show s = "macro"
 type SpecialFunc = (Context,[SExpr])->Either String (Context,SExpr)
-instance Show SpecialFunc where
-  show s = "special"
 
 type Formals = [Ident]
 type Body = SExpr
@@ -89,7 +83,14 @@ data SExpr = N Integer | I Ident | S String
            | Special SpecialFunc
            | Closure Context Formals Body
            | Comb [SExpr]
-  deriving Show
+instance Show SExpr where
+  show (I ident) = "'" ++ ident
+  show EmptyList = "'()"
+  show (F _) = "builtin"
+  show (Macro _) = "macro"
+  show (Special _) = "special"
+  show (Closure c f b) = "(lambda" ++ show f ++ show b ++ ")"
+  show (Comb l) = "(" ++ unlines (fmap show l) ++ ")"
 
 parseAtom :: Parser SExpr
 parseAtom = (N <$> integer) <|> 

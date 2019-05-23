@@ -5,7 +5,6 @@ module SEval where
 import Control.Monad
 import Data.Semigroup
 import Data.Bifunctor
-import Data.Either.Combinators
 
 
 import AParser
@@ -196,8 +195,10 @@ eval (c, EmptyList)     = Right (c, EmptyList)
 {- sequentially evalutates the list of expressions, starting
 in the given context and passing the context along as it goes -}
 evalSeq :: (Context, [SExpr]) -> Either String (Context,[SExpr])
+evalSeq (c, [])  = return (c, [])
+{- I'm pretty sure this is unnecessary
 evalSeq (c,[x])  = do (newc, newx) <- eval (c,x) 
-                      return (newc,[newx])
+                      return (newc,[newx])-}
 evalSeq (c,(x:xs)) = do (newc, xval) <- eval (c,x) 
                         (second $ (:) xval) <$> evalSeq (newc,xs)
                       
@@ -238,3 +239,7 @@ parseProgram p = case mapM (runParser parseSExpr) $ lines p of
 evalProgram :: String -> Either String [SExpr]
 evalProgram p = parseProgram p >>= curry evalSeq builtInsList
             >>= return . snd
+
+main :: IO ()
+main = getContents >>= return . show . evalProgram >>= putStrLn
+        
