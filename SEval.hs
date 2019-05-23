@@ -143,6 +143,12 @@ bindArgs c fs args | length fs == length args =
     | otherwise = Left $ "gave the wrong number of args " 
         ++ show args ++ " for the formals: " ++ show fs
 
+biDefine :: (Context, [SExpr]) -> Either String (Context, SExpr)
+biDefine (c@(C ctext), [I ident,y]) = case lookup ident ctext of
+    Nothing  -> return $ (c <> C [(ident,y)], y)
+    Just exp -> Left $ show ident ++ " has already been defined"
+biDefine (_, exp) = Left $ "define " ++ show exp ++ 
+                        " is not a valid define"
 {-appendC :: Context -> Context -> Context
 appendC (C c1) (C c2) = C $ c1 ++ c2-}
 
@@ -167,7 +173,8 @@ builtInsList = C [("+", F biPlus),
                 ("or", Special biOr),
                 ("quote", Special biQuote),
                 ("lambda", Special biLambda),
-                ("let", Special biLet)]
+                ("let", Special biLet),
+                ("define", Special biDefine)]
 
 {- eval needs to know the difference between a function, which
 takes a list of evaluated arguments and evaluates them, and a 
@@ -193,8 +200,8 @@ evalSeq (c,[x])  = do (newc, newx) <- eval (c,x)
 evalSeq (c,(x:xs)) = do (newc, xval) <- eval (c,x) 
                         fmap (second $ (:) xval) $ evalSeq (newc,xs)
                       
-shareC :: (Context, [SExpr]) -> [(Context, SExpr)]
-shareC (c, exps) = zip (repeat c) exps
+{-shareC :: (Context, [SExpr]) -> [(Context, SExpr)]
+shareC (c, exps) = zip (repeat c) exps-}
 
 combEval :: (Context,[SExpr]) -> Either String (Context,SExpr)
 --(c,rest) :: (Context, [SExpr])
@@ -218,3 +225,4 @@ evaluateScheme s = case (runParser parseSExpr s) of
         (Just (sexpr, "")) -> eval (builtInsList, sexpr)
         (Just (_, leftover)) -> Left $ "parsed but had " ++ 
             leftover ++ "remaining at end"
+
