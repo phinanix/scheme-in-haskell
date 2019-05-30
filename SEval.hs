@@ -144,12 +144,15 @@ bindArgs c fs args | length fs == length args =
 
 biDefine :: (Context, [SExpr]) -> Either String (Context, SExpr)
 biDefine (c@(C ctext), [I ident,y]) = case lookup ident ctext of
-    Nothing  -> return $ (c <> C [(ident,y)], y)
+    Nothing  -> (,) <$> return (c <> C [(ident,y)]) <*> 
+                                snd <$> eval (c,y)
     Just exp -> Left $ show ident ++ " has already been defined"
+--syntactic sugar for lambda
+biDefine (c, [Comb (name@(I _):args), body]) = 
+    biDefine (c, [name, lamb]) where 
+    lamb = Comb [I "lambda", Comb args, body] 
 biDefine (_, exp) = Left $ "define " ++ show exp ++ 
                         " is not a valid define"
-{-appendC :: Context -> Context -> Context
-appendC (C c1) (C c2) = C $ c1 ++ c2-}
 
 {-to write quote, it seems like we need some sort of intermediate 
 representation, it's not a SchemeVal because it's not fully evaluated, but it's not an SExpr either . . . is it?
@@ -217,7 +220,8 @@ combEval (c, ((Macro m):rest)) = do newtree <- m rest
 combEval (c, ((Special s):rest)) = s (c, rest)
 combEval (c,((Closure innerc formals body):args)) =  
     do boundargs <- bindArgs c formals args
-       eval ((boundargs <> innerc), body)
+       (_, result) <- eval ((innerc <> boundargs), body)
+       return (c, result)
 combEval (_, (x:rest)) = Left $ "Tried to call " ++ (show x) ++ 
     " (not a function) on " ++ (show rest)
 
@@ -242,4 +246,3 @@ evalProgram p = parseProgram p >>= curry evalSeq builtInsList
 
 main :: IO ()
 main = getContents >>= return . show . evalProgram >>= putStrLn
-        

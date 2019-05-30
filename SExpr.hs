@@ -29,7 +29,7 @@ anyOf "" = empty
 anyOf (x:xs) = char x <|> anyOf xs
 
 validSymbol :: Char -> Bool
-validSymbol c = elem c "+-*/!@$%^&_=|~"
+validSymbol c = elem c "+-*/!@$%^&_=|~\'"
 
 validStart :: Char -> Bool
 validStart c = or [isAlpha c, validSymbol c]
@@ -38,7 +38,7 @@ validRest :: Char -> Bool
 validRest c = or [isAlphaNum c, validSymbol c]
 
 spaces :: Parser String
-spaces = zeroOrMore (satisfy isSpace)
+spaces = zeroOrMore (satisfy isSpace <|> char '\n')
 
 ident :: Parser String
 ident =(:)<$> (satisfy validStart)
@@ -84,13 +84,17 @@ data SExpr = N Integer | I Ident | S String
            | Closure Context Formals Body
            | Comb [SExpr]
 instance Show SExpr where
-  show (I ident) = "'" ++ ident
-  show EmptyList = "'()"
-  show (F _) = "builtin"
-  show (Macro _) = "macro"
-  show (Special _) = "special"
-  show (Closure c f b) = "(lambda" ++ show f ++ show b ++ ")"
-  show (Comb l) = "(" ++ unlines (fmap show l) ++ ")"
+  show (N integer)     = show integer
+  show (I ident)       = "'" ++ ident
+  show (S string)      = show string
+  show (BO bool)       = show bool
+  show EmptyList       = "'()"
+  show (F _)           = "builtin"
+  show (Macro _)       = "macro"
+  show (Special _)     = "special"
+  show (Closure c f b) = "(lambda " ++ show f ++ show b ++ ")"
+  show (Comb l)        = "(" ++ unwords (fmap show l) ++ ")"
+  
 
 parseAtom :: Parser SExpr
 parseAtom = (N <$> integer) <|> 
